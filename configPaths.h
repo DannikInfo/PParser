@@ -13,5 +13,6 @@
 #define DELAY "delay"
 #define MARKER_DIRS "markerDirs"
 #define MARKER_FILES "markerFiles"
+#define IGNORE_DIRS "ignoreDirs"
 
 #endif //PPARSER_CONFIGPATHS_H

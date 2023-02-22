@@ -12,6 +12,7 @@ dataManager::dataManager(){
 
     markerFiles = config::get<std::vector<std::string>>(MARKER_FILES);
     markerDirs = config::get<std::vector<std::string>>(MARKER_DIRS);
+    ignoreDirs = config::get<std::vector<std::string>>(IGNORE_DIRS);
 }
 
 void dataManager::searchProjects(const std::string& root){
@@ -34,6 +35,14 @@ void dataManager::searchProjects(const std::string& root){
 
     //Recursive directory parsing
     for (const auto &entry : std::filesystem::directory_iterator(root)) {
+        bool ignored = false;
+        for (const auto &item: ignoreDirs){
+            if(strstr(entry.path().c_str(), item.c_str()) != nullptr)
+                ignored = true;
+        }
+        if(ignored)
+            continue;
+
         vPath.clear();
         utils::split(entry.path(), "/", vPath);
         eName = vPath.back(); //Get current path name
@@ -207,64 +216,70 @@ void dataManager::loadDataFromFile(std::string &path){
     if(strstr(path.c_str(), "project.json")){
         nlohmann::json j;
         std::ifstream f(path.c_str());
-        if(f.is_open()) {
-            f >> j;
+        try {
+            if (f.is_open()) {
+                f >> j;
 
-            project prj;
-            manufacturer m;
-            std::vector<std::string> persons;
-            building b;
-            workshop w;
 
-            //manufacturer
-            if(j["manufacturer"].contains("id")) {
-                m.setID(j["manufacturer"]["id"].get<int>());
-                m.setName(j["manufacturer"]["name"].get<std::string>());
-                m.setCountry(j["manufacturer"]["country"].get<std::string>());
+                project prj;
+                manufacturer m;
+                std::vector<std::string> persons;
+                building b;
+                workshop w;
+
+                //manufacturer
+                if (j["manufacturer"].contains("id")) {
+                    m.setID(j["manufacturer"]["id"].get<int>());
+                    m.setName(j["manufacturer"]["name"].get<std::string>());
+                    m.setCountry(j["manufacturer"]["country"].get<std::string>());
+                }
+                //building
+                if (j["building"].contains("id")) {
+                    b.setID(j["building"]["id"]);
+                    b.setName(j["building"]["name"].get<std::string>());
+                }
+
+                //workshop
+                if (j["workshop"].contains("id")) {
+                    w.setID(j["workshop"]["id"]);
+                    w.setName(j["workshop"]["name"].get<std::string>());
+                }
+                //Project
+                prj.setID(j["id"].get<int>());
+                prj.setName(j["name"].get<std::string>());
+                prj.setNameNoOff(j["nameNoOff"].get<std::string>());
+                prj.setCommissioning(j["commissioning"].get<int>());
+                prj.setModify(j["modify"].get<int>());
+                prj.setManufacturerID(m.getID());
+                prj.setBuildingID(b.getID());
+                prj.setWorkshopID(w.getID());
+                prj.setPersons(j["persons"].get<std::vector<std::string>>());
+
+
+                std::vector<std::string> vPath;
+                vPath.clear();
+                utils::split(path, "/", vPath);
+
+                std::string prjPath;
+                for (int i = 2; i < vPath.size() - 1; i++)
+                    prjPath += "/" + vPath[i];
+                prj.setDir(prjPath);
+                prj.setNote(j["note"].get<std::string>());
+
+                prj.setSubPrjs(j["subProjects"]["id"].get<std::list<int>>());
+                prj.setSubPrjsNames(j["subProjects"]["noOffNames"].get<std::vector<std::string>>());
+
+                projectsF[prj.getID()] = prj;
+                workshopsF[w.getID()] = w;
+                buildingsF[b.getID()] = b;
+                manufacturersF[m.getID()] = m;
+                if (config::get<bool>(DEBUG))
+                    logger::info(
+                            "loaded project from file: " + prj.getName() + " with id " + std::to_string(prj.getID()));
+                f.close();
             }
-            //building
-            if(j["building"].contains("id")) {
-                b.setID(j["building"]["id"]);
-                b.setName(j["building"]["name"].get<std::string>());
-            }
-
-            //workshop
-            if(j["workshop"].contains("id")) {
-                w.setID(j["workshop"]["id"]);
-                w.setName(j["workshop"]["name"].get<std::string>());
-            }
-            //Project
-            prj.setID(j["id"].get<int>());
-            prj.setName(j["name"].get<std::string>());
-            prj.setNameNoOff(j["nameNoOff"].get<std::string>());
-            prj.setCommissioning(j["commissioning"].get<int>());
-            prj.setModify(j["modify"].get<int>());
-            prj.setManufacturerID(m.getID());
-            prj.setBuildingID(b.getID());
-            prj.setWorkshopID(w.getID());
-            prj.setPersons(j["persons"].get<std::vector<std::string>>());
-
-
-            std::vector<std::string> vPath;
-            vPath.clear();
-            utils::split(path, "/", vPath);
-
-            std::string prjPath;
-            for(int i = 2; i < vPath.size()-1; i++)
-                prjPath += "/" + vPath[i];
-            prj.setDir(prjPath);
-            prj.setNote(j["note"].get<std::string>());
-
-            prj.setSubPrjs(j["subProjects"]["id"].get<std::list<int>>());
-            prj.setSubPrjsNames(j["subProjects"]["noOffNames"].get<std::vector<std::string>>());
-
-            projectsF[prj.getID()] = prj;
-            workshopsF[w.getID()] = w;
-            buildingsF[b.getID()] = b;
-            manufacturersF[m.getID()] = m;
-            if(config::get<bool>(DEBUG))
-                logger::info("loaded project from file: " + prj.getName() + " with id " + std::to_string(prj.getID()));
-            f.close();
+        }catch(...){
+            logger::error("JSON not valid: " + path);
         }
     }
 }
@@ -285,13 +300,11 @@ void dataManager::foundUpload(){
             dir = fPrj.getDir();
             dir.erase(0, config::get<std::string>(SMB_ROOT).length());
 
-            globalPath = "//srv-adnt/projects$" + dir;
-            if(!strcasecmp(dbPrj.getDir().c_str(), globalPath.c_str())|| //Check duplicates by dir and name
-               !strcasecmp(dbPrj.getName().c_str(), fPrj.getName().c_str())
-                    ){
+            globalPath = config::get<std::string>(REAL_ROOT) + dir;
+            if(!strcasecmp(dbPrj.getDir().c_str(), globalPath.c_str())){//Check duplicates by dir and name
                 foundProjects.erase(foundProjects.begin() + i);
-               if(config::get<bool>(DEBUG))
-                   logger::info("duplicate: " + fPrj.getName());
+                if(config::get<bool>(DEBUG))
+                    logger::info("duplicate: " + std::to_string(dbPrj.getID()) + " - " + dbPrj.getName());
             }
         }
     }
@@ -304,7 +317,7 @@ void dataManager::foundUpload(){
 
         dir = prj.getDir();
         dir.erase(0, config::get<std::string>(SMB_ROOT).length());
-        globalPath = "//srv-adnt/projects$" + dir;
+        globalPath = config::get<std::string>(REAL_ROOT) + dir;
 
         std::string sql = "INSERT INTO projects SET nameOfficial='"+prj.getName()+"', nameNoOfficial='', commissioning=0, modify=0, lastModify=0,  dir='"+globalPath+"', note='"+prj.getNote()+"'";
 
@@ -316,6 +329,25 @@ void dataManager::foundUpload(){
 
     if(!foundProjects.empty())
         logger::success("Found projects uploaded!");
+}
+
+void dataManager::findDuplicates(){
+    std::map<int, project>::iterator itDB, it2DB;
+
+    std::string globalPath, dir;
+    project dbPrj, db2Prj;
+
+    //Excluding duplicates in found projects
+    for(itDB = projectsDB.begin(); itDB != projectsDB.end(); itDB++){
+        dbPrj = itDB->second;
+        for(it2DB = projectsDB.begin(); it2DB != projectsDB.end(); it2DB++){
+            db2Prj = it2DB->second;
+
+            if(!strcasecmp(dbPrj.getDir().c_str(), db2Prj.getDir().c_str()) && dbPrj.getID() != db2Prj.getID()){
+                logger::info("duplicate: " + std::to_string(dbPrj.getID()) + " - "+ dbPrj.getName() + " with " + std::to_string(db2Prj.getID()) + " - " + db2Prj.getName());
+            }
+        }
+    }
 }
 
 void dataManager::fixDirectories(){
@@ -374,12 +406,15 @@ void dataManager::fixDirectories(){
 
 void dataManager::toFile(project prj){
     std::string dir = prj.getDir();
-    dir.erase(0, config::get<std::string>(REAL_ROOT).length());
+    if(strstr(prj.getDir().c_str(), config::get<std::string>(REAL_ROOT).c_str()))
+        dir = dir.substr(config::get<std::string>(REAL_ROOT).length(), dir.length());
+    else if(strstr(prj.getDir().c_str(), config::get<std::string>(SMB_ROOT).c_str()))
+        dir = dir.substr(config::get<std::string>(SMB_ROOT).length(), dir.length());
 
     std::string dirLocal = config::get<std::string>(SMB_ROOT) + dir;
 
     if(!std::filesystem::exists(dirLocal.c_str())){
-        logger::error("dir not exists: " + std::to_string(prj.getID()) + " - " + prj.getDir());
+        logger::error("dir not exists: " + std::to_string(prj.getID()) + " - " + dirLocal);
         return;
     }
 

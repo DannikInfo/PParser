@@ -6,6 +6,7 @@
 int main() {
     std::vector<std::string> markerDirs = {"Документ", "Фото", "Чертежи", "Программ", "Doc", "Схемы", "Draw", "Prog", "SOFT", "Исходники"};
     std::vector<std::string> markerFiles = {"ttt.txt", "project.txt", "info_project.txt", "project.json"};
+    std::vector<std::string> ignoreDirs = {"/media/srv-adnt/Archive"};
 
     logger::init("PParser", 50, 10);
     config::init("config");
@@ -20,12 +21,15 @@ int main() {
     config::set(DELAY, 60);
     config::set(MARKER_DIRS, markerDirs);
     config::set(MARKER_FILES, markerFiles);
-    config::loadConfig();
+    config::set(IGNORE_DIRS, ignoreDirs);
+
 
     while(true) {
+        config::loadConfig();
         dataManager dm;
-        dm.searchTask();
         dm.fixTask();
+        dm.searchTask();
+        dm.findDuplicates();
         sleep(config::get<int>(DELAY));
     }
 }

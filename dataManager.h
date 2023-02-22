@@ -62,6 +62,7 @@ private:
 
     std::vector<std::string> markerDirs;
     std::vector<std::string> markerFiles;
+    std::vector<std::string> ignoreDirs;
 
     sql::Driver* driver;
     sql::ConnectOptionsMap conOpt;
@@ -89,6 +90,8 @@ public:
     //Tasks
     void searchTask();
     void fixTask();
+
+    void findDuplicates();
 };
 
 
